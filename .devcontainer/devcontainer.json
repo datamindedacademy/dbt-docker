@@ -1,0 +1,21 @@
+{
+  "name": "A Containerized dbt Workflow",
+  "image": "mcr.microsoft.com/devcontainers/base:debian",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": { "moby": false }
+  },
+  "postCreateCommand": "docker compose up -d --build",
+  "forwardPorts": [5430],
+  "portsAttributes": {
+    "5430": { "label": "Postgres", "onAutoForward": "silent" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "innoverio.vscode-dbt-power-user",
+        "samuelcolvin.jinjahtml",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  }
+}
