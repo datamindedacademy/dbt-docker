@@ -1,6 +1,4 @@
-
+.DS_Store
 target/
 dbt_packages/
 logs/
-.DS_Store
-package-lock.yml

@@ -1,155 +1,154 @@
-# A Dockerized dbt Workflow
+# A Containerized dbt Workflow
 
-📚 A demo brought to you by the [Data Minded Academy].
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/datamindedacademy/dbt-docker)
 
+A runnable dbt project that builds seeds, models, snapshots and tests against a
+Postgres database, with both services defined in `docker-compose.yml`. Clone it,
+run one command, and get a working warehouse to experiment against.
 
-## Prerequisites 
+It closes out the Dataminded Academy dbt and Docker courses, and stands on its
+own as a sandbox for a dbt project that runs locally without a cloud warehouse.
 
-Had completed the dbt course and the lecture/exercises part of the Docker course. This is the last part.
+## What's in the box
 
+Two services:
 
-## Context
+- `postgres`: built from `Dockerfile.postgres`, a Postgres 18 instance preloaded
+  with [Pagila], the Postgres port of the Sakila example database. Sakila models
+  a DVD rental store: films, customers, payments, rentals and a dozen other
+  normalised tables.
+- `dbt`: built from `Dockerfile`, running dbt Core with the Postgres adapter. It
+  builds the example project in `dbt_project/` into the Postgres database.
 
-This is a dummy dbt (data build tool) project you can use to populate dbt seeds, models, snapshots and tests for testing purposes or experimentation.
+## Running it
 
-The `docker-compose.yml` file consists of two services:
-- `postgres`
-- `dbt`
+### In GitHub Codespaces
 
-that are used to build the data models defined in the example project into a target Postgres database.
+Click the badge above. The devcontainer installs Docker and runs
+`docker compose up -d --build` on creation, so the models are already built by
+the time the editor opens.
 
+### Locally
 
-## `postgres` service and the Sakila Database
-
-This is an instance of a Postgres database initialised with Sakila database (and thus we are using the `frantiseks/postgres-sakila` image which is available on Docker Hub). 
-
-The database models a DVD rental store and contains several normalised tables that correspond to films, payments, 
-customers and other entities.
-
-Sakila Database was developed by Mike Hillyer, who used to be a member of the AB documentation team at MySQL. For more 
-information regarding Sakila Database you can refer to the 
-[official MySQL documentation](https://dev.mysql.com/doc/sakila/en/sakila-introduction.html). 
-
-
-## `dbt` service
-
-This service is built out of the `Dockerfile` and is responsible for creating dbt seeds, models and snapshots on `postgres` service. The example dbt project contains seeds, models (staging, intermediate and mart) as well as 
-snapshots. 
-
-Note that this is a dummy project, meaning that some entities (including aggregations) might not make too much sense
-from a business perspective. For example, even though the Sakila database contains the `customer` table already, we
-construct another table called `customer_base` that corresponds to a dbt seed, and is loaded from an external 
-`csv` file.
-
-Additionally, the models created may not be the perfect examples of what it should be considered as an intermediate or 
-mart model. In general if you are interested in gaining a deeper understanding of these terms I would encourage you to 
-read the following articles:
-- [Staging vs Intermediate vs Mart models in dbt](https://towardsdatascience.com/staging-intermediate-mart-models-dbt-2a759ecc1db1)
-- [How to structure your dbt project and data models](https://towardsdatascience.com/dbt-models-structure-c31c8977b5fc)
-
-Feel free to add, modify or remove models while cloning or forking the project in order to serve the purpose you 
-intend to use it for. 
-
-
-## Running the dummy dbt project
-
-First, let's build the services defined in our `docker-compose.yml` file:
+Docker Desktop, or Docker Engine with the Compose plugin, is the only
+requirement.
 
 ```bash
-docker-compose build
+docker compose up --build
 ```
 
-and now let's run the services so that the dbt models are created in our target Postgres database: 
+Either way, Postgres starts first, and dbt waits for it to accept connections
+before running `dbt deps && dbt build`. The `dbt` container stays up afterwards
+so we can keep working inside it.
 
-```commandline
-docker-compose up
+The first start takes a minute or so: the Pagila SQL downloads during the image
+build, then Postgres loads roughly 13 MB of it before dbt begins. Later starts
+reuse the existing image and volume, and are quick.
+
+## What gets built
+
+The project takes one source table, `public.payment`, plus a seed file, and
+builds staging, intermediate and mart models on top:
+
+| Model | Type | What it does |
+| --- | --- | --- |
+| `stg_payment` | view | Staging layer over the `payment` source table |
+| `customer_base` | seed | 599 customers loaded from `seeds/customer_base.csv` |
+| `int_revenue_by_date` | view | Daily revenue |
+| `int_customers_per_store` | view | Customer count per store |
+| `cumulative_revenue` | table | Running revenue total over time |
+| `int_customers_per_store_snapshot` | snapshot | Tracks customer counts per store as they change |
+
+Nine data tests run alongside them, covering uniqueness and null checks.
+
+Note that this is a dummy project. Some entities, including the aggregations,
+would not make much sense to a real DVD rental business. The `customer` table
+already exists in Sakila, and we still build a separate `customer_base` seed
+from a CSV to show how seeds work. For a deeper treatment of how to structure
+the layers, the dbt docs on [how we structure our dbt projects] are a better
+guide than these models.
+
+## Working inside the containers
+
+Both services have fixed container names, so we can reach them directly.
+
+Rebuild models after editing them:
+
+```bash
+docker exec -it dbt dbt build --profiles-dir profiles
 ```
 
-This will spin up two containers namely `dbt` (out of the `dbt-dummy` image) and `postgres` (out of the
-`frantiseks/postgres-sakila` image).
+Or open a shell and work from there:
 
-Notes:
-- For development purposes, both containers will remain up and running
-- If you would like to end the `dbt` container, feel free to remove the `&& sleep infinity` in `CMD` command of the `Dockerfile`
+```bash
+docker exec -it dbt /bin/bash
 
-
-### Building additional or modified data models
-Once the containers are up and running, you can still make any modifications in the existing dbt project and re-run any command to serve the purpose of the modifications. 
-
-In order to build your data models, you first need to access the container.
-
-To do so, we infer the container id for `dbt` running container:
-```commandline
-docker ps
+dbt deps                              # install packages from packages.yml
+dbt seed --profiles-dir profiles      # load seeds
+dbt run --profiles-dir profiles       # build models
+dbt snapshot --profiles-dir profiles  # build snapshots
+dbt test --profiles-dir profiles      # run tests
+dbt build --profiles-dir profiles     # all of the above, in dependency order
 ```
 
-Then enter the running container:
-```commandline
-docker exec -it <container-id> /bin/bash
+The repository is mounted into the container, so edits on the host apply
+immediately.
+
+## Querying the results
+
+```bash
+docker exec -it postgres psql -U postgres
 ```
 
-And finally:
+Then:
 
-```commandline
-# Install dbt deps
-dbt deps
-
-# Build seeds
-dbt seeds --profiles-dir profiles
-
-# Build data models
-dbt run --profiles-dir profiles
-
-# Build snapshots
-dbt snapshot --profiles-dir profiles
-
-# Run tests
-dbt test --profiles-dir profiles
-```
-
-Alternatively, you can run everything in just a single command:
-
-```commandline
-dbt build --profiles-dir profiles
-```
-
-### Querying seeds, models and snapshots on Postgres
-
-In order to query and verify the seeds, models and snapshots created in the dummy dbt project, simply follow the steps below. 
-
-Find the container id of the postgres service (`postgres`):
-```commandline
-docker ps 
-```
-
-Then run 
-```commandline
-docker exec -t <container-id> /bin/bash
-```
-
-We will then use `psql`, a terminal-based interface for PostgreSQL that allows us to query the database:
-```commandline
-psql -U postgres
-```
-
-Now you can query the tables constructed from the seeds, models and snapshots defined in the dbt project:
 ```sql
--- Query seed tables
+-- Seeds
 SELECT * FROM customer_base;
 
--- Query staging views
+-- Staging views
 SELECT * FROM stg_payment;
 
--- Query intermediate views
+-- Intermediate views
 SELECT * FROM int_customers_per_store;
 SELECT * FROM int_revenue_by_date;
 
--- Query mart tables
+-- Mart tables
 SELECT * FROM cumulative_revenue;
 
--- Query snapshot tables
-SELECT * FROM int_stock_balances_daily_grouped_by_day_snapshot;
+-- Snapshots
+SELECT * FROM int_customers_per_store_snapshot;
 ```
 
+Postgres is also published on `localhost:5430` for connecting a database client
+or BI tool from the host.
 
-[Data Minded Academy]: https://www.dataminded.academy/
+## Making changes
+
+Add, modify or remove models freely. The `dbt_project/` folder holds the whole
+project: models in `models/`, seeds in `seeds/`, snapshots in `snapshots/`, and
+connection settings in `profiles/profiles.yml`.
+
+To start over from an empty database, drop the volume:
+
+```bash
+docker compose down -v && docker compose up --build
+```
+
+## Where the data comes from
+
+The Postgres schema and data come from [Pagila], maintained by Devrim Gündüz.
+Pagila is a port of the Sakila database originally written by Mike Hillyer at
+MySQL AB, and is available under the PostgreSQL License.
+
+`Dockerfile.postgres` fetches it at build time and drops it into the image's
+first-start hook, so the SQL lives upstream instead of in this repository.
+Moving to a different release means editing the `PAGILA_TAG` argument at the top
+of that file, then rebuilding:
+
+```bash
+docker compose build postgres && docker compose up -d --force-recreate postgres
+```
+
+[Pagila]: https://github.com/devrimgunduz/pagila
+[how we structure our dbt projects]: https://docs.getdbt.com/best-practices/how-we-structure/1-guide-overview

@@ -1,0 +1,19 @@
+# Postgres preloaded with Pagila, the PostgreSQL port of the Sakila example
+# database: https://github.com/devrimgunduz/pagila
+#
+# The schema and data are fetched at build time rather than committed, so this
+# repository stays small and bumping the dataset is a one-line change.
+#
+# v4.0.0 rather than the latest tag: v4.1.0 adds columns needing the pgvector
+# extension, which the official postgres image does not carry. v4.0.0 needs no
+# extensions, only PostgreSQL 18 for uuidv7().
+FROM postgres:18
+
+ARG PAGILA_TAG=pagila-v4.0.0
+ARG PAGILA_URL=https://raw.githubusercontent.com/devrimgunduz/pagila/${PAGILA_TAG}
+
+# Anything in this directory runs on first start, in filename order. The mode
+# matters: files added from a URL are not world-readable by default, and the
+# entrypoint reads them as the postgres user.
+ADD --chmod=644 ${PAGILA_URL}/pagila-schema.sql /docker-entrypoint-initdb.d/01-schema.sql
+ADD --chmod=644 ${PAGILA_URL}/pagila-data.sql   /docker-entrypoint-initdb.d/02-data.sql
